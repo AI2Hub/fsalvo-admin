@@ -1,12 +1,13 @@
 use salvo::prelude::*;
-use sea_orm::{ColumnTrait, EntityTrait, NotSet, PaginatorTrait, QueryFilter, QueryTrait};
 use sea_orm::ActiveValue::Set;
+use sea_orm::{ColumnTrait, EntityTrait, NotSet, PaginatorTrait, QueryFilter, QueryTrait};
 
-use crate::AppState;
-use crate::model::{sys_role, sys_role_menu, sys_user_role};
+use crate::common::result::BaseResponse;
+use crate::common::result_page::ResponsePage;
 use crate::model::prelude::{SysMenu, SysRole, SysRoleMenu, SysUserRole};
-use crate::vo::{err_result_msg, ok_result_data, ok_result_msg, ok_result_page};
-use crate::vo::role_vo::*;
+use crate::model::{sys_role, sys_role_menu, sys_user_role};
+use crate::vo::system::role_vo::*;
+use crate::AppState;
 
 // 查询角色列表
 #[handler]
@@ -23,14 +24,18 @@ pub async fn role_list(req: &mut Request, depot: &mut Depot, res: &mut Response)
         })
         .apply_if(item.status_id.clone(), |query, v| {
             query.filter(sys_role::Column::StatusId.eq(v))
-        }).paginate(conn, item.page_size.clone());
+        })
+        .paginate(conn, item.page_size.clone());
 
     let total = paginator.num_items().await.unwrap_or_default();
 
-
     let mut list_data: Vec<RoleListData> = Vec::new();
 
-    for role in paginator.fetch_page(item.page_no.clone() - 1).await.unwrap_or_default() {
+    for role in paginator
+        .fetch_page(item.page_no.clone() - 1)
+        .await
+        .unwrap_or_default()
+    {
         list_data.push(RoleListData {
             id: role.id,
             sort: role.sort,
@@ -42,7 +47,7 @@ pub async fn role_list(req: &mut Request, depot: &mut Depot, res: &mut Response)
         })
     }
 
-    res.render(Json(ok_result_page(list_data, total)))
+    ResponsePage::<Vec<RoleListData>>::ok_result_page(res, list_data, total)
 }
 
 // 添加角色信息
@@ -64,7 +69,7 @@ pub async fn role_save(req: &mut Request, depot: &mut Depot, res: &mut Response)
     };
 
     SysRole::insert(sys_role).exec(conn).await.unwrap();
-    res.render(Json(ok_result_msg("添加角色成功!")))
+    BaseResponse::<String>::ok_result(res)
 }
 
 // 更新角色信息
@@ -76,8 +81,13 @@ pub async fn role_update(req: &mut Request, depot: &mut Depot, res: &mut Respons
     let state = depot.obtain::<AppState>().unwrap();
     let conn = &state.conn;
 
-    if SysRole::find_by_id(role.id.clone()).one(conn).await.unwrap_or_default().is_none() {
-        return res.render(Json(err_result_msg("角色不存在,不能更新!")));
+    if SysRole::find_by_id(role.id.clone())
+        .one(conn)
+        .await
+        .unwrap_or_default()
+        .is_none()
+    {
+        return BaseResponse::<String>::err_result_msg(res, "角色不存在,不能更新!".to_string());
     }
     let sys_role = sys_role::ActiveModel {
         id: Set(role.id),
@@ -89,7 +99,7 @@ pub async fn role_update(req: &mut Request, depot: &mut Depot, res: &mut Respons
     };
 
     SysRole::update(sys_role).exec(conn).await.unwrap();
-    res.render(Json(ok_result_msg("更新角色成功!")))
+    BaseResponse::<String>::ok_result(res)
 }
 
 // 删除角色信息
@@ -103,12 +113,25 @@ pub async fn role_delete(req: &mut Request, depot: &mut Depot, res: &mut Respons
 
     let ids = item.ids.clone();
 
-    if SysUserRole::find().filter(sys_user_role::Column::RoleId.is_in(ids)).count(conn).await.unwrap_or_default() > 0 {
-        return res.render(Json(err_result_msg("角色已被使用,不能直接删除！")));
+    if SysUserRole::find()
+        .filter(sys_user_role::Column::RoleId.is_in(ids))
+        .count(conn)
+        .await
+        .unwrap_or_default()
+        > 0
+    {
+        return BaseResponse::<String>::err_result_msg(
+            res,
+            "角色已被使用,不能直接删除!".to_string(),
+        );
     }
 
-    SysRole::delete_many().filter(sys_role::Column::Id.is_in(item.ids.clone())).exec(conn).await.unwrap();
-    res.render(Json(ok_result_msg("删除角色信息成功!")))
+    SysRole::delete_many()
+        .filter(sys_role::Column::Id.is_in(item.ids.clone()))
+        .exec(conn)
+        .await
+        .unwrap();
+    BaseResponse::<String>::ok_result(res)
 }
 
 // 查询角色关联的菜单
@@ -138,12 +161,23 @@ pub async fn query_role_menu(req: &mut Request, depot: &mut Depot, res: &mut Res
     //不是超级管理员的时候,就要查询角色和菜单的关联
     if item.role_id != 1 {
         role_menu_ids.clear();
-        for x in SysRoleMenu::find().filter(sys_role_menu::Column::RoleId.eq(item.role_id.clone())).all(conn).await.unwrap_or_default() {
+        for x in SysRoleMenu::find()
+            .filter(sys_role_menu::Column::RoleId.eq(item.role_id.clone()))
+            .all(conn)
+            .await
+            .unwrap_or_default()
+        {
             role_menu_ids.push(x.menu_id);
         }
     }
 
-    res.render(Json(ok_result_data(QueryRoleMenuData { role_menus: role_menu_ids, menu_list: menu_data_list })))
+    BaseResponse::<QueryRoleMenuData>::ok_result_data(
+        res,
+        QueryRoleMenuData {
+            role_menus: role_menu_ids,
+            menu_list: menu_data_list,
+        },
+    )
 }
 
 // 更新角色关联的菜单
@@ -156,7 +190,11 @@ pub async fn update_role_menu(req: &mut Request, depot: &mut Depot, res: &mut Re
     let conn = &state.conn;
     let role_id = item.role_id.clone();
 
-    SysRoleMenu::delete_many().filter(sys_role_menu::Column::RoleId.eq(role_id)).exec(conn).await.unwrap();
+    SysRoleMenu::delete_many()
+        .filter(sys_role_menu::Column::RoleId.eq(role_id))
+        .exec(conn)
+        .await
+        .unwrap();
     let mut menu_role: Vec<sys_role_menu::ActiveModel> = Vec::new();
 
     for id in &item.menu_ids {
@@ -170,6 +208,9 @@ pub async fn update_role_menu(req: &mut Request, depot: &mut Depot, res: &mut Re
             ..Default::default()
         })
     }
-    SysRoleMenu::insert_many(menu_role).exec(conn).await.unwrap();
-    res.render(Json(ok_result_msg("更新角色关联的菜单!")))
+    SysRoleMenu::insert_many(menu_role)
+        .exec(conn)
+        .await
+        .unwrap();
+    BaseResponse::<String>::ok_result(res)
 }

@@ -5,16 +5,17 @@ use salvo::affix_state;
 use salvo::prelude::*;
 use sea_orm::{Database, DatabaseConnection};
 
-use crate::handler::menu_handler::{*};
-use crate::handler::role_handler::{*};
-use crate::handler::user_handler::{*};
-use crate::utils::auth::auth_token;
+use handler::system::menu_handler::{*};
+use handler::system::role_handler::{*};
+use handler::system::user_handler::{*};
+use middleware::auth::auth_token;
 
 pub mod model;
 pub mod vo;
 pub mod handler;
 pub mod utils;
-
+mod middleware;
+mod common;
 
 #[handler]
 async fn hello() -> &'static str {

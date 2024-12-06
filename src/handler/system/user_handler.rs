@@ -5,12 +5,13 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, D
 use sea_orm::ActiveValue::Set;
 
 use crate::AppState;
+use crate::common::error::WhoUnfollowedError;
+use crate::common::result::BaseResponse;
+use crate::common::result_page::ResponsePage;
 use crate::model::{sys_menu, sys_user, sys_user_role};
 use crate::model::prelude::{SysMenu, SysRole, SysUser, SysUserRole};
-use crate::utils::error::WhoUnfollowedError;
 use crate::utils::jwt_util::JWTToken;
-use crate::vo::{err_result_msg, ok_result_data, ok_result_msg, ok_result_page};
-use crate::vo::user_vo::*;
+use crate::vo::system::user_vo::*;
 
 // 后台用户登录
 #[handler]
@@ -25,7 +26,7 @@ pub async fn login(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     log::info!("select_by_mobile: {:?}",user_result);
 
     if user_result.is_none() {
-        return res.render(Json(err_result_msg("用户不存在!")));
+        return BaseResponse::<String>::err_result_msg(res,"用户不存在!".to_string());
     }
 
     let user = user_result.unwrap();
@@ -35,18 +36,18 @@ pub async fn login(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     let password = user.password;
 
     if password.ne(&item.password) {
-        return res.render(Json(err_result_msg("密码不正确!")));
+        return BaseResponse::<String>::err_result_msg(res,"密码不正确!".to_string());
     }
 
     let btn_menu = query_btn_menu(conn, id.clone()).await;
 
     if btn_menu.len() == 0 {
-        return res.render(Json(err_result_msg("用户没有分配角色或者菜单,不能登录!")));
+        return BaseResponse::<String>::err_result_msg(res,"用户没有分配角色或者菜单,不能登录!".to_string());
     }
 
     match JWTToken::new(id, &username, btn_menu).create_token("123") {
         Ok(token) => {
-            res.render(Json(ok_result_data(token)))
+            BaseResponse::<String>::ok_result_data(res, token)
         }
         Err(err) => {
             let er = match err {
@@ -54,7 +55,7 @@ pub async fn login(req: &mut Request, depot: &mut Depot, res: &mut Response) {
                 _ => "no math error".to_string()
             };
 
-            res.render(Json(err_result_msg(&er)))
+            BaseResponse::<String>::err_result_msg(res,er.to_string())
         }
     }
 }
@@ -107,7 +108,7 @@ pub async fn query_user_role(req: &mut Request, depot: &mut Depot, res: &mut Res
         });
     }
 
-    res.render(Json(ok_result_data(QueryUserRoleData { sys_role_list, user_role_ids })))
+    BaseResponse::<QueryUserRoleData>::ok_result_data(res,QueryUserRoleData { sys_role_list, user_role_ids })
 }
 
 // 更新用户与角色的关联
@@ -123,7 +124,7 @@ pub async fn update_user_role(req: &mut Request, depot: &mut Depot, res: &mut Re
     let role_ids = &user_role.role_ids;
 
     if user_id == 1 {
-        return res.render(Json(err_result_msg("不能修改超级管理员的角色!")));
+        return BaseResponse::<String>::err_result_msg(res,"不能修改超级管理员的角色!".to_string());
     }
 
     SysUserRole::delete_many().filter(sys_user_role::Column::UserId.eq(user_id)).exec(conn).await.unwrap();
@@ -145,7 +146,7 @@ pub async fn update_user_role(req: &mut Request, depot: &mut Depot, res: &mut Re
     }
 
     SysUserRole::insert_many(sys_role_user_list).exec(conn).await.unwrap();
-    res.render(Json(ok_result_msg("更新用户角色信息成功!")))
+    BaseResponse::<String>::ok_result(res)
 }
 
 #[handler]
@@ -161,7 +162,7 @@ pub async fn query_user_menu(depot: &mut Depot, res: &mut Response) {
     log::info!("query user menu params {:?}",username);
 
     if SysUser::find_by_id(user_id).one(conn).await.unwrap_or_default().is_none() {
-        return res.render(Json(err_result_msg("用户不存在!")));
+        return BaseResponse::<String>::err_result_msg(res,"用户不存在!".to_string());
     }
 
     let sys_menu_list: Vec<sys_menu::Model>;
@@ -208,7 +209,7 @@ pub async fn query_user_menu(depot: &mut Depot, res: &mut Response) {
 
     let avatar = "https://gw.alipayobjects.com/zos/antfincdn/XAosXuNZyF/BiazfanxmamNRoxxVxka.png".to_string();
 
-    res.render(Json(ok_result_data(QueryUserMenuData { sys_menu, btn_menu, avatar, name: username })))
+    BaseResponse::<QueryUserMenuData>::ok_result_data(res, QueryUserMenuData { sys_menu, btn_menu, avatar, name: username })
 }
 
 // 查询用户列表
@@ -245,7 +246,7 @@ pub async fn user_list(req: &mut Request, depot: &mut Depot, res: &mut Response)
         })
     }
 
-    res.render(Json(ok_result_page(list_data, total)))
+    ResponsePage::<Vec<UserListData>>::ok_result_page(res, list_data, total)
 }
 
 // 添加用户信息
@@ -268,7 +269,7 @@ pub async fn user_save(req: &mut Request, depot: &mut Depot, res: &mut Response)
     };
 
     SysUser::insert(sys_user).exec(conn).await.unwrap();
-    res.render(Json(ok_result_msg("添加用户信息成功!")))
+    BaseResponse::<String>::ok_result(res)
 }
 
 // 更新用户信息
@@ -281,8 +282,8 @@ pub async fn user_update(req: &mut Request, depot: &mut Depot, res: &mut Respons
     let conn = &state.conn;
 
     if SysUser::find_by_id(user.id.clone()).one(conn).await.unwrap_or_default().is_none() {
-        // return  res.render(Json(err_result_msg("用户不存在!")));
-        return res.render(Json(err_result_msg("用户不存在!")));
+        // return  BaseResponse::<String>::err_result_msg(res,"用户不存在!")));
+        return BaseResponse::<String>::err_result_msg(res,"用户不存在!".to_string());
     }
 
     let sys_user = sys_user::ActiveModel {
@@ -296,7 +297,7 @@ pub async fn user_update(req: &mut Request, depot: &mut Depot, res: &mut Respons
     };
 
     SysUser::update(sys_user).exec(conn).await.unwrap();
-    res.render(Json(ok_result_msg("更新用户信息成功!")))
+    BaseResponse::<String>::ok_result(res)
 }
 
 // 删除用户信息
@@ -315,7 +316,7 @@ pub async fn user_delete(req: &mut Request, depot: &mut Depot, res: &mut Respons
         }
     }
 
-    res.render(Json(ok_result_msg("删除用户信息成功!")))
+    BaseResponse::<String>::ok_result(res)
 }
 
 // 更新用户密码
@@ -329,7 +330,7 @@ pub async fn update_user_password(req: &mut Request, depot: &mut Depot, res: &mu
 
     let result = SysUser::find_by_id(user_pwd.id).one(conn).await.unwrap_or_default();
     if result.is_none() {
-        return res.render(Json(err_result_msg("用户不存在!")));
+        return BaseResponse::<String>::err_result_msg(res,"用户不存在!".to_string());
     };
 
     let user = result.unwrap();
@@ -338,8 +339,8 @@ pub async fn update_user_password(req: &mut Request, depot: &mut Depot, res: &mu
         s_user.password = Set(user_pwd.re_pwd);
 
         s_user.update(conn).await.unwrap();
-        res.render(Json(ok_result_msg("更新用户密码成功!")))
+        BaseResponse::<String>::ok_result_msg(res,"更新用户密码成功!".to_string())
     } else {
-        res.render(Json(err_result_msg("旧密码不正确!")))
+        BaseResponse::<String>::err_result_msg(res,"旧密码不正确!".to_string())
     }
 }
