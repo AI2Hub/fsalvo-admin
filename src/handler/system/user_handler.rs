@@ -1,28 +1,28 @@
 use std::collections::HashSet;
 
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, sql_query};
-use diesel::associations::HasTable;
-use diesel::sql_types::Bigint;
-use log::{debug, error, info, warn};
-use salvo::{Request, Response};
-use salvo::prelude::*;
-
-use crate::{RB, schema};
+use crate::common::result::BaseResponse;
+use crate::common::result_page::ResponsePage;
 use crate::model::menu::{StringColumn, SysMenu};
 use crate::model::role::SysRole;
 use crate::model::user::{SysUser, SysUserAdd, SysUserUpdate};
 use crate::model::user_role::{SysUserRole, SysUserRoleAdd};
-use crate::schema::sys_menu::{api_url, sort};
 use crate::schema::sys_menu::dsl::sys_menu;
+use crate::schema::sys_menu::{api_url, sort};
 use crate::schema::sys_role::dsl::sys_role;
-use crate::schema::sys_user::{id, mobile, status_id};
 use crate::schema::sys_user::dsl::sys_user;
-use crate::schema::sys_user_role::{role_id, user_id};
+use crate::schema::sys_user::{id, mobile, status_id};
 use crate::schema::sys_user_role::dsl::sys_user_role;
+use crate::schema::sys_user_role::{role_id, user_id};
 use crate::utils::error::WhoUnfollowedError;
 use crate::utils::jwt_util::JWTToken;
-use crate::vo::{err_result_msg, handle_result, ok_result, ok_result_data, ok_result_page};
-use crate::vo::user_vo::*;
+use crate::vo::system::user_vo::*;
+use crate::{schema, RB};
+use diesel::associations::HasTable;
+use diesel::sql_types::Bigint;
+use diesel::{sql_query, ExpressionMethods, QueryDsl, RunQueryDsl};
+use log::{debug, error, info, warn};
+use salvo::prelude::*;
+use salvo::{Request, Response};
 
 // 后台用户登录
 #[handler]
@@ -32,43 +32,47 @@ pub async fn login(req: &mut Request, res: &mut Response) {
     match &mut RB.clone().get() {
         Ok(conn) => {
             let query = sys_user.filter(mobile.eq(&item.mobile));
-            debug!("SQL: {}", diesel::debug_query::<diesel::mysql::Mysql, _>(&query).to_string());
+            debug!(
+                "SQL: {}",
+                diesel::debug_query::<diesel::mysql::Mysql, _>(&query).to_string()
+            );
 
             if let Ok(user) = query.first::<SysUser>(conn) {
                 info!("select_by_mobile: {:?}", user);
 
                 if user.password.ne(&item.password) {
-                    return res.render(Json(err_result_msg("密码不正确".to_string())));
+                    return BaseResponse::<String>::err_result_msg(res, "密码不正确".to_string());
                 }
 
                 let btn_menu = query_btn_menu(user.id);
 
                 if btn_menu.len() == 0 {
-                    return res.render(Json(err_result_msg("用户没有分配角色或者菜单,不能登录".to_string())));
+                    return BaseResponse::<String>::err_result_msg(
+                        res,
+                        "用户没有分配角色或者菜单,不能登录".to_string(),
+                    );
                 }
 
                 match JWTToken::new(user.id, &user.user_name, btn_menu).create_token("123") {
-                    Ok(token) => {
-                        res.render(Json(ok_result_data(token)))
-                    }
+                    Ok(token) => BaseResponse::<String>::ok_result_data(res, token),
                     Err(err) => {
                         let er = match err {
-                            WhoUnfollowedError::JwtTokenError(s) => { s }
-                            _ => "no math error".to_string()
+                            WhoUnfollowedError::JwtTokenError(s) => s,
+                            _ => "no math error".to_string(),
                         };
 
                         error!("err:{}", er.to_string());
-                        res.render(Json(err_result_msg(er)))
+                        BaseResponse::<String>::err_result_msg(res, er)
                     }
                 }
             } else {
                 error!("err:{}", "根据手机号查询用户异常".to_string());
-                res.render(Json(err_result_msg("根据手机号查询用户异常".to_string())))
+                BaseResponse::<String>::err_result_msg(res, "根据手机号查询用户异常".to_string())
             }
         }
         Err(err) => {
             error!("err:{}", err.to_string());
-            res.render(Json(err_result_msg(err.to_string())))
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
         }
     }
 }
@@ -76,27 +80,29 @@ pub async fn login(req: &mut Request, res: &mut Response) {
 fn query_btn_menu(u_id: i64) -> Vec<String> {
     match &mut RB.clone().get() {
         Ok(conn) => {
-            let user_role_sql = sql_query("SELECT * FROM sys_user_role where user_id = ? and role_id = 1");
-            match user_role_sql.bind::<Bigint, _>(&u_id).get_result::<SysUserRole>(conn) {
+            let user_role_sql =
+                sql_query("SELECT * FROM sys_user_role where user_id = ? and role_id = 1");
+            match user_role_sql
+                .bind::<Bigint, _>(&u_id)
+                .get_result::<SysUserRole>(conn)
+            {
                 Ok(_) => {
                     let sys_menu_result = sys_menu.select(api_url).load::<String>(conn);
                     match sys_menu_result {
-                        Ok(btn) => {
-                            btn
-                        }
-                        Err(_) => {
-                            Vec::new()
-                        }
+                        Ok(btn) => btn,
+                        Err(_) => Vec::new(),
                     }
                 }
                 Err(_) => {
-                    let result = sql_query("select u.api_url from sys_user_role t \
+                    let result = sql_query(
+                        "select u.api_url from sys_user_role t \
                     left join sys_role usr on t.role_id = usr.id \
                     left join sys_role_menu srm on usr.id = srm.role_id \
                     left join sys_menu u on srm.menu_id = u.id \
-                    where t.user_id = ?")
-                        .bind::<Bigint, _>(&u_id)
-                        .load::<StringColumn>(conn);
+                    where t.user_id = ?",
+                    )
+                    .bind::<Bigint, _>(&u_id)
+                    .load::<StringColumn>(conn);
 
                     match result {
                         Ok(btn_list) => {
@@ -108,9 +114,7 @@ fn query_btn_menu(u_id: i64) -> Vec<String> {
                             }
                             return btn_list_data;
                         }
-                        Err(_) => {
-                            Vec::new()
-                        }
+                        Err(_) => Vec::new(),
                     }
                 }
             }
@@ -129,7 +133,11 @@ pub async fn query_user_role(req: &mut Request, res: &mut Response) {
         Ok(conn) => {
             let mut user_role_ids: Vec<i64> = Vec::new();
 
-            if let Ok(ids) = sys_user_role.filter(user_id.eq(&item.user_id)).select(role_id).load::<i64>(conn) {
+            if let Ok(ids) = sys_user_role
+                .filter(user_id.eq(&item.user_id))
+                .select(role_id)
+                .load::<i64>(conn)
+            {
                 user_role_ids = ids
             }
 
@@ -150,14 +158,17 @@ pub async fn query_user_role(req: &mut Request, res: &mut Response) {
                 }
             }
 
-            res.render(Json(ok_result_data(QueryUserRoleData {
-                sys_role_list,
-                user_role_ids,
-            })))
+            BaseResponse::<QueryUserRoleData>::ok_result_data(
+                res,
+                QueryUserRoleData {
+                    sys_role_list,
+                    user_role_ids,
+                },
+            )
         }
         Err(err) => {
             error!("err:{}", err.to_string());
-            res.render(Json(err_result_msg(err.to_string())))
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
         }
     }
 }
@@ -171,53 +182,58 @@ pub async fn update_user_role(req: &mut Request, res: &mut Response) {
     let role_ids = user_role.role_ids;
 
     if u_id == 1 {
-        return res.render(Json(err_result_msg("不能修改超级管理员的角色".to_string())));
+        return BaseResponse::<String>::err_result_msg(res, "不能修改超级管理员的角色".to_string());
     }
 
-    let resp = match &mut RB.clone().get() {
-        Ok(conn) => {
-            match diesel::delete(sys_user_role.filter(user_id.eq(u_id))).execute(conn) {
-                Ok(_) => {
-                    let mut sys_role_user_list: Vec<SysUserRoleAdd> = Vec::new();
-                    for r_id in role_ids {
-                        sys_role_user_list.push(SysUserRoleAdd {
-                            status_id: 1,
-                            sort: 1,
-                            role_id: r_id,
-                            user_id: u_id.clone(),
-                        })
-                    }
-                    handle_result(diesel::insert_into(sys_user_role::table()).values(&sys_role_user_list).execute(conn))
+    match &mut RB.clone().get() {
+        Ok(conn) => match diesel::delete(sys_user_role.filter(user_id.eq(u_id))).execute(conn) {
+            Ok(_) => {
+                let mut sys_role_user_list: Vec<SysUserRoleAdd> = Vec::new();
+                for r_id in role_ids {
+                    sys_role_user_list.push(SysUserRoleAdd {
+                        status_id: 1,
+                        sort: 1,
+                        role_id: r_id,
+                        user_id: u_id.clone(),
+                    })
                 }
-                Err(err) => {
-                    error!("err:{}", err.to_string());
-                    err_result_msg(err.to_string())
-                }
+                let result = diesel::insert_into(sys_user_role::table())
+                    .values(&sys_role_user_list)
+                    .execute(conn);
+                match result {
+                    Ok(_u) => BaseResponse::<String>::ok_result(res),
+                    Err(err) => BaseResponse::<String>::err_result_msg(res, err.to_string()),
+                };
             }
-        }
+            Err(err) => {
+                error!("err:{}", err.to_string());
+                BaseResponse::<String>::err_result_msg(res, err.to_string())
+            }
+        },
         Err(err) => {
             error!("err:{}", err.to_string());
-            err_result_msg(err.to_string())
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
         }
-    };
-
-    res.render(Json(resp))
+    }
 }
-
 
 #[handler]
 pub async fn query_user_menu(depot: &mut Depot, res: &mut Response) {
-    info!("query user menu params {:?}",depot);
+    info!("query user menu params {:?}", depot);
     let u_id = depot.get::<i64>("userId").copied().unwrap();
     let username = depot.get::<String>("username").unwrap().to_string();
-    info!("query user menu params {:?}",user_id);
-    info!("query user menu params {:?}",username);
+    info!("query user menu params {:?}", user_id);
+    info!("query user menu params {:?}", username);
 
     match &mut RB.clone().get() {
         Ok(conn) => {
-            return match sql_query("select * from sys_user where id = ?").bind::<Bigint, _>(u_id).get_result::<SysUser>(conn) {
+            return match sql_query("select * from sys_user where id = ?")
+                .bind::<Bigint, _>(u_id)
+                .get_result::<SysUser>(conn)
+            {
                 Ok(user) => {
-                    let user_role_sql = sql_query("SELECT * FROM sys_user_role where user_id = ? and role_id = 1");
+                    let user_role_sql =
+                        sql_query("SELECT * FROM sys_user_role where user_id = ? and role_id = 1");
                     let sys_menu_list: Vec<SysMenu>;
                     match user_role_sql.bind::<Bigint, _>(&user.id).get_result::<SysUserRole>(conn) {
                         Ok(_) => {
@@ -227,7 +243,7 @@ pub async fn query_user_menu(depot: &mut Depot, res: &mut Response) {
                                 }
                                 Err(err) => {
                                     error!("err:{}", err.to_string());
-                                    return res.render(Json(err_result_msg(err.to_string())));
+                                    return BaseResponse::<String>::err_result_msg(res,err.to_string());
                                 }
                             }
                         }
@@ -240,12 +256,11 @@ pub async fn query_user_menu(depot: &mut Depot, res: &mut Response) {
                                 }
                                 Err(err) => {
                                     error!("err:{}", err.to_string());
-                                    return res.render(Json(err_result_msg(err.to_string())));
+                                    return BaseResponse::<String>::err_result_msg(res,err.to_string());
                                 }
                             }
                         }
                     }
-
 
                     let mut sys_user_menu_list: Vec<MenuUserList> = Vec::new();
                     let mut btn_menu: Vec<String> = Vec::new();
@@ -266,7 +281,13 @@ pub async fn query_user_menu(depot: &mut Depot, res: &mut Response) {
                     for ids in sys_menu_ids {
                         menu_ids.push(ids)
                     }
-                    match sys_menu.filter(schema::sys_menu::id.eq_any(menu_ids)).filter(schema::sys_menu::status_id.eq(1)).order(sort.asc()).distinct().load::<SysMenu>(conn) {
+                    match sys_menu
+                        .filter(schema::sys_menu::id.eq_any(menu_ids))
+                        .filter(schema::sys_menu::status_id.eq(1))
+                        .order(sort.asc())
+                        .distinct()
+                        .load::<SysMenu>(conn)
+                    {
                         Ok(menu_list) => {
                             for x in menu_list {
                                 sys_user_menu_list.push(MenuUserList {
@@ -286,27 +307,27 @@ pub async fn query_user_menu(depot: &mut Depot, res: &mut Response) {
                         }
                         Err(err) => {
                             error!("err:{}", err.to_string());
-                            return res.render(Json(err_result_msg(err.to_string())));
+                            return BaseResponse::<String>::err_result_msg(res, err.to_string());
                         }
                     }
 
-                    res.render(Json(ok_result_data(QueryUserMenuData {
-                        sys_menu: sys_user_menu_list,
+                    BaseResponse::<QueryUserMenuData>::ok_result_data(res, QueryUserMenuData {
+                        sys_menu:sys_user_menu_list,
                         btn_menu,
                         avatar: "https://gw.alipayobjects.com/zos/antfincdn/XAosXuNZyF/BiazfanxmamNRoxxVxka.png".to_string(),
                         name: user.user_name,
-                    })))
+                    })
                 }
 
                 Err(err) => {
                     error!("err:{}", err.to_string());
-                    res.render(Json(err_result_msg(err.to_string())))
+                    BaseResponse::<String>::err_result_msg(res, err.to_string())
                 }
             };
         }
         Err(err) => {
             error!("err:{}", err.to_string());
-            res.render(Json(err_result_msg(err.to_string())))
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
         }
     }
 }
@@ -324,7 +345,10 @@ pub async fn user_list(req: &mut Request, res: &mut Response) {
         query = query.filter(mobile.eq(i));
     }
 
-    debug!("SQL:{}", diesel::debug_query::<diesel::mysql::Mysql, _>(&query).to_string());
+    debug!(
+        "SQL:{}",
+        diesel::debug_query::<diesel::mysql::Mysql, _>(&query).to_string()
+    );
 
     match &mut RB.clone().get() {
         Ok(conn) => {
@@ -343,11 +367,11 @@ pub async fn user_list(req: &mut Request, res: &mut Response) {
                     })
                 }
             }
-            res.render(Json(ok_result_page(list_data, 10)))
+            ResponsePage::<Vec<UserListData>>::ok_result_page(res, list_data, 10)
         }
         Err(err) => {
             error!("err:{}", err.to_string());
-            res.render(Json(err_result_msg(err.to_string())))
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
         }
     }
 }
@@ -364,10 +388,27 @@ pub async fn user_save(req: &mut Request, res: &mut Response) {
         mobile: user.mobile,
         user_name: user.user_name,
         remark: user.remark,
-        password: "123456".to_string(),//默认密码为123456,暂时不加密
+        password: "123456".to_string(), //默认密码为123456,暂时不加密
     };
 
-    res.render(Json(SysUser::add_user(s_user)))
+    match &mut RB.clone().get() {
+        Ok(conn) => {
+            let query = diesel::insert_into(sys_user::table()).values(s_user);
+            debug!(
+                "SQL:{}",
+                diesel::debug_query::<diesel::mysql::Mysql, _>(&query).to_string()
+            );
+            let result = query.execute(conn);
+            match result {
+                Ok(_u) => BaseResponse::<String>::ok_result(res),
+                Err(err) => BaseResponse::<String>::err_result_msg(res, err.to_string()),
+            }
+        }
+        Err(err) => {
+            error!("err:{}", err.to_string());
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
+        }
+    }
 }
 
 // 更新用户信息
@@ -375,11 +416,14 @@ pub async fn user_save(req: &mut Request, res: &mut Response) {
 pub async fn user_update(req: &mut Request, res: &mut Response) {
     let user = req.parse_json::<UserUpdateReq>().await.unwrap();
     info!("user_update params: {:?}", &user);
-    let resp = match &mut RB.clone().get() {
+    match &mut RB.clone().get() {
         Ok(conn) => {
             let user_sql = sql_query("SELECT * FROM sys_user where id = ? ");
 
-            match user_sql.bind::<Bigint, _>(user.id).get_result::<SysUser>(conn) {
+            match user_sql
+                .bind::<Bigint, _>(user.id)
+                .get_result::<SysUser>(conn)
+            {
                 Ok(s_user) => {
                     let s_user = SysUserUpdate {
                         id: user.id.clone(),
@@ -392,22 +436,27 @@ pub async fn user_update(req: &mut Request, res: &mut Response) {
                     };
 
                     let query = diesel::update(sys_user.filter(id.eq(user.id.clone()))).set(s_user);
-                    debug!("SQL:{}", diesel::debug_query::<diesel::mysql::Mysql, _>(&query).to_string());
-                    handle_result(query.execute(conn))
+                    debug!(
+                        "SQL:{}",
+                        diesel::debug_query::<diesel::mysql::Mysql, _>(&query).to_string()
+                    );
+                    let result = query.execute(conn);
+                    match result {
+                        Ok(_u) => BaseResponse::<String>::ok_result(res),
+                        Err(err) => BaseResponse::<String>::err_result_msg(res, err.to_string()),
+                    }
                 }
                 Err(err) => {
                     error!("err:{}", err.to_string());
-                    err_result_msg(err.to_string())
+                    BaseResponse::<String>::err_result_msg(res, err.to_string())
                 }
             }
         }
         Err(err) => {
             error!("err:{}", err.to_string());
-            err_result_msg(err.to_string())
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
         }
-    };
-
-    res.render(Json(resp))
+    }
 }
 
 // 删除用户信息
@@ -417,7 +466,7 @@ pub async fn user_delete(req: &mut Request, res: &mut Response) {
     info!("user_delete params: {:?}", &item);
     info!("user_delete params: {:?}", &item);
 
-    let resp = match &mut RB.clone().get() {
+    match &mut RB.clone().get() {
         Ok(conn) => {
             let ids = item.ids.clone();
             //id为1的用户为系统预留用户,不能删除
@@ -431,20 +480,25 @@ pub async fn user_delete(req: &mut Request, res: &mut Response) {
             }
 
             if delete_ids.len() == 0 {
-                return res.render(Json(ok_result()));
+                return BaseResponse::<String>::ok_result(res);
             }
 
             let query = diesel::delete(sys_user.filter(id.eq_any(delete_ids)));
-            debug!("SQL: {}", diesel::debug_query::<diesel::mysql::Mysql, _>(&query).to_string());
-            handle_result(query.execute(conn))
+            debug!(
+                "SQL: {}",
+                diesel::debug_query::<diesel::mysql::Mysql, _>(&query).to_string()
+            );
+            let result = query.execute(conn);
+            match result {
+                Ok(_u) => BaseResponse::<String>::ok_result(res),
+                Err(err) => BaseResponse::<String>::err_result_msg(res, err.to_string()),
+            }
         }
         Err(err) => {
             error!("err:{}", err.to_string());
-            err_result_msg(err.to_string())
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
         }
-    };
-
-    res.render(Json(resp))
+    }
 }
 
 // 更新用户密码
@@ -453,28 +507,38 @@ pub async fn update_user_password(req: &mut Request, res: &mut Response) {
     let user_pwd = req.parse_json::<UpdateUserPwdReq>().await.unwrap();
     info!("update_user_pwd params: {:?}", &user_pwd);
 
-    let resp = match &mut RB.clone().get() {
+    match &mut RB.clone().get() {
         Ok(conn) => {
             let user_sql = sql_query("SELECT * FROM sys_user where id = ? ");
-            match user_sql.bind::<Bigint, _>(user_pwd.id).get_result::<SysUser>(conn) {
+            match user_sql
+                .bind::<Bigint, _>(user_pwd.id)
+                .get_result::<SysUser>(conn)
+            {
                 Ok(user) => {
                     if user.password != user_pwd.pwd {
                         error!("err:{}", "旧密码不正确".to_string());
-                        return res.render(Json(err_result_msg("旧密码不正确".to_string())));
+                        return BaseResponse::<String>::err_result_msg(
+                            res,
+                            "旧密码不正确".to_string(),
+                        );
                     }
-                    handle_result(diesel::update(sys_user.filter(id.eq(user_pwd.id.clone()))).set(crate::schema::sys_user::password.eq(&user_pwd.re_pwd)).execute(conn))
+                    let result = diesel::update(sys_user.filter(id.eq(user_pwd.id.clone())))
+                        .set(crate::schema::sys_user::password.eq(&user_pwd.re_pwd))
+                        .execute(conn);
+                    match result {
+                        Ok(_u) => BaseResponse::<String>::ok_result(res),
+                        Err(err) => BaseResponse::<String>::err_result_msg(res, err.to_string()),
+                    }
                 }
                 Err(err) => {
                     error!("err:{}", err.to_string());
-                    err_result_msg(err.to_string())
+                    BaseResponse::<String>::err_result_msg(res, err.to_string())
                 }
             }
         }
         Err(err) => {
             error!("err:{}", err.to_string());
-            err_result_msg(err.to_string())
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
         }
-    };
-
-    res.render(Json(resp))
+    }
 }

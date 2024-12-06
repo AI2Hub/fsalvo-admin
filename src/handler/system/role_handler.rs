@@ -1,21 +1,22 @@
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use diesel::associations::HasTable;
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use log::{debug, error};
-use salvo::{Request, Response};
 use salvo::prelude::*;
+use salvo::{Request, Response};
 
-use crate::{RB, schema};
+use crate::common::result::BaseResponse;
+use crate::common::result_page::ResponsePage;
 use crate::model::menu::SysMenu;
 use crate::model::role::{SysRole, SysRoleAdd, SysRoleUpdate};
 use crate::model::role_menu::SysRoleMenuAdd;
 use crate::schema::sys_menu::dsl::sys_menu;
-use crate::schema::sys_role::{id, role_name, status_id};
 use crate::schema::sys_role::dsl::sys_role;
-use crate::schema::sys_role_menu::{menu_id, role_id};
+use crate::schema::sys_role::{id, role_name, status_id};
 use crate::schema::sys_role_menu::dsl::sys_role_menu;
+use crate::schema::sys_role_menu::{menu_id, role_id};
 use crate::schema::sys_user_role::dsl::sys_user_role;
-use crate::vo::{err_result_msg, handle_result, ok_result_data, ok_result_page};
-use crate::vo::role_vo::*;
+use crate::vo::system::role_vo::*;
+use crate::{schema, RB};
 
 // 添加角色信息
 #[handler]
@@ -29,17 +30,21 @@ pub async fn add_role(req: &mut Request, res: &mut Response) {
         remark: role.remark.unwrap(),
     };
 
-    let resp = match &mut RB.clone().get() {
+    match &mut RB.clone().get() {
         Ok(conn) => {
-            handle_result(diesel::insert_into(sys_role::table()).values(role_add).execute(conn))
+            let result = diesel::insert_into(sys_role::table())
+                .values(role_add)
+                .execute(conn);
+            match result {
+                Ok(_u) => BaseResponse::<String>::ok_result(res),
+                Err(err) => BaseResponse::<String>::err_result_msg(res, err.to_string()),
+            };
         }
         Err(err) => {
             error!("err:{}", err.to_string());
-            err_result_msg(err.to_string())
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
         }
-    };
-
-    res.render(Json(resp))
+    }
 }
 
 // 删除角色信息
@@ -47,31 +52,41 @@ pub async fn add_role(req: &mut Request, res: &mut Response) {
 pub async fn delete_role(req: &mut Request, res: &mut Response) {
     let item = req.parse_json::<RoleDeleteReq>().await.unwrap();
     log::info!("delete_role params: {:?}", &item);
-    let resp = match &mut RB.clone().get() {
+    match &mut RB.clone().get() {
         Ok(conn) => {
             let ids = item.ids.clone();
             //查询角色有没有被使用了,如果使用了就不能删除
-            match sys_user_role.filter(schema::sys_user_role::role_id.eq_any(ids)).count().get_result::<i64>(conn) {
+            match sys_user_role
+                .filter(schema::sys_user_role::role_id.eq_any(ids))
+                .count()
+                .get_result::<i64>(conn)
+            {
                 Ok(count) => {
                     if count != 0 {
                         error!("err:{}", "角色已被使用,不能删除".to_string());
-                        return res.render(Json(err_result_msg("角色已被使用,不能删除".to_string())));
+                        return BaseResponse::<String>::err_result_msg(
+                            res,
+                            "角色已被使用,不能删除".to_string(),
+                        );
                     }
-                    handle_result(diesel::delete(sys_role.filter(id.eq_any(&item.ids))).execute(conn))
+                    let result =
+                        diesel::delete(sys_role.filter(id.eq_any(&item.ids))).execute(conn);
+                    match result {
+                        Ok(_u) => BaseResponse::<String>::ok_result(res),
+                        Err(err) => BaseResponse::<String>::err_result_msg(res, err.to_string()),
+                    };
                 }
                 Err(err) => {
                     error!("err:{}", err.to_string());
-                    err_result_msg(err.to_string())
+                    BaseResponse::<String>::err_result_msg(res, err.to_string())
                 }
             }
         }
         Err(err) => {
             error!("err:{}", err.to_string());
-            err_result_msg(err.to_string())
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
         }
-    };
-
-    res.render(Json(resp))
+    }
 }
 
 // 更新角色信息
@@ -87,17 +102,22 @@ pub async fn update_role(req: &mut Request, res: &mut Response) {
         remark: role.remark.unwrap_or_default(),
     };
 
-    let resp = match &mut RB.clone().get() {
+    match &mut RB.clone().get() {
         Ok(conn) => {
-            handle_result(diesel::update(sys_role).filter(id.eq(&role.id)).set(s_role).execute(conn))
+            let result = diesel::update(sys_role)
+                .filter(id.eq(&role.id))
+                .set(s_role)
+                .execute(conn);
+            match result {
+                Ok(_u) => BaseResponse::<String>::ok_result(res),
+                Err(err) => BaseResponse::<String>::err_result_msg(res, err.to_string()),
+            };
         }
         Err(err) => {
             error!("err:{}", err.to_string());
-            err_result_msg(err.to_string())
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
         }
-    };
-
-    res.render(Json(resp))
+    }
 }
 
 // 查询角色列表
@@ -113,7 +133,10 @@ pub async fn query_role_list(req: &mut Request, res: &mut Response) {
         query = query.filter(status_id.eq(i));
     }
 
-    debug!("SQL:{}", diesel::debug_query::<diesel::mysql::Mysql, _>(&query).to_string());
+    debug!(
+        "SQL:{}",
+        diesel::debug_query::<diesel::mysql::Mysql, _>(&query).to_string()
+    );
 
     match &mut RB.clone().get() {
         Ok(conn) => {
@@ -133,11 +156,11 @@ pub async fn query_role_list(req: &mut Request, res: &mut Response) {
                 }
             }
 
-            res.render(Json(ok_result_page(list, 10)))
+            ResponsePage::<Vec<RoleListData>>::ok_result_page(res, list, 10)
         }
         Err(err) => {
             error!("err:{}", err.to_string());
-            res.render(Json(err_result_msg(err.to_string())))
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
         }
     }
 }
@@ -168,7 +191,7 @@ pub async fn query_role_menu(req: &mut Request, res: &mut Response) {
                 }
                 Err(err) => {
                     error!("err:{}", err.to_string());
-                    return res.render(Json(err_result_msg(err.to_string())));
+                    return BaseResponse::<String>::err_result_msg(res, err.to_string());
                 }
             }
 
@@ -176,25 +199,30 @@ pub async fn query_role_menu(req: &mut Request, res: &mut Response) {
             if item.role_id != 1 {
                 role_menu_ids.clear();
 
-                match sys_role_menu.filter(role_id.eq(item.role_id.clone())).select(menu_id).load::<i64>(conn) {
-                    Ok(menu_ids) => {
-                        role_menu_ids = menu_ids
-                    }
+                match sys_role_menu
+                    .filter(role_id.eq(item.role_id.clone()))
+                    .select(menu_id)
+                    .load::<i64>(conn)
+                {
+                    Ok(menu_ids) => role_menu_ids = menu_ids,
                     Err(err) => {
                         error!("err:{}", err.to_string());
-                        return res.render(Json(err_result_msg(err.to_string())));
+                        return BaseResponse::<String>::err_result_msg(res, err.to_string());
                     }
                 }
             }
 
-            res.render(Json(ok_result_data(QueryRoleMenuData {
-                role_menus: role_menu_ids,
-                menu_list: menu_data_list,
-            })))
+            BaseResponse::<QueryRoleMenuData>::ok_result_data(
+                res,
+                QueryRoleMenuData {
+                    role_menus: role_menu_ids,
+                    menu_list: menu_data_list,
+                },
+            )
         }
         Err(err) => {
             error!("err:{}", err.to_string());
-            res.render(Json(err_result_msg(err.to_string())))
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
         }
     }
 }
@@ -207,34 +235,36 @@ pub async fn update_role_menu(req: &mut Request, res: &mut Response) {
     let r_id = item.role_id.clone();
     let menu_ids = item.menu_ids.clone();
 
-    let resp = match &mut RB.clone().get() {
-        Ok(conn) => {
-            match diesel::delete(sys_role_menu.filter(role_id.eq(r_id))).execute(conn) {
-                Ok(_) => {
-                    let mut role_menu: Vec<SysRoleMenuAdd> = Vec::new();
+    match &mut RB.clone().get() {
+        Ok(conn) => match diesel::delete(sys_role_menu.filter(role_id.eq(r_id))).execute(conn) {
+            Ok(_) => {
+                let mut role_menu: Vec<SysRoleMenuAdd> = Vec::new();
 
-                    for m_id in menu_ids {
-                        role_menu.push(SysRoleMenuAdd {
-                            status_id: 1,
-                            sort: 1,
-                            menu_id: m_id.clone(),
-                            role_id: r_id.clone(),
-                        })
-                    }
+                for m_id in menu_ids {
+                    role_menu.push(SysRoleMenuAdd {
+                        status_id: 1,
+                        sort: 1,
+                        menu_id: m_id.clone(),
+                        role_id: r_id.clone(),
+                    })
+                }
 
-                    handle_result(diesel::insert_into(sys_role_menu::table()).values(&role_menu).execute(conn))
-                }
-                Err(err) => {
-                    error!("err:{}", err.to_string());
-                    err_result_msg(err.to_string())
-                }
+                let result = diesel::insert_into(sys_role_menu::table())
+                    .values(&role_menu)
+                    .execute(conn);
+                match result {
+                    Ok(_u) => BaseResponse::<String>::ok_result(res),
+                    Err(err) => BaseResponse::<String>::err_result_msg(res, err.to_string()),
+                };
             }
-        }
+            Err(err) => {
+                error!("err:{}", err.to_string());
+                BaseResponse::<String>::err_result_msg(res, err.to_string())
+            }
+        },
         Err(err) => {
             error!("err:{}", err.to_string());
-            err_result_msg(err.to_string())
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
         }
-    };
-
-    res.render(Json(resp))
+    }
 }

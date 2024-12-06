@@ -6,9 +6,9 @@ use dotenvy::dotenv;
 use once_cell::sync::Lazy;
 use salvo::prelude::*;
 
-use crate::handler::menu_handler::{*};
-use crate::handler::role_handler::{*};
-use crate::handler::user_handler::{*};
+use handler::system::menu_handler::{*};
+use handler::system::role_handler::{*};
+use handler::system::user_handler::{*};
 use crate::middleware::auth::auth_token;
 
 pub mod model;
@@ -17,6 +17,7 @@ pub mod handler;
 pub mod utils;
 pub mod schema;
 pub mod middleware;
+pub mod common;
 
 #[handler]
 async fn hello() -> &'static str {
