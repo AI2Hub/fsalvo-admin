@@ -4,7 +4,6 @@ use sea_orm::ActiveValue::Set;
 
 use crate::AppState;
 use crate::common::result::BaseResponse;
-use crate::common::result_page::ResponsePage;
 use crate::model::prelude::SysMenu;
 use crate::model::sys_menu;
 use crate::model::sys_menu::ActiveModel;
@@ -39,7 +38,7 @@ pub async fn menu_list(req: &mut Request, depot: &mut Depot, res: &mut Response)
         })
     }
 
-    ResponsePage::<Vec<MenuListData>>::ok_result(res, list_data)
+    BaseResponse::<Vec<MenuListData>>::ok_result_page(res, list_data, 0)
 }
 
 // 添加菜单
