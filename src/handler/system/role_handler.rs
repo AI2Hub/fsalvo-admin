@@ -8,6 +8,99 @@ use crate::model::{sys_role, sys_role_menu, sys_user_role};
 use crate::vo::system::role_vo::*;
 use crate::AppState;
 
+
+// 添加角色信息
+#[handler]
+pub async fn role_save(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    let role = req.parse_json::<RoleSaveReq>().await.unwrap();
+    log::info!("role_save params: {:?}", &role);
+
+    let state = depot.obtain::<AppState>().unwrap();
+    let conn = &state.conn;
+
+    let sys_role = sys_role::ActiveModel {
+        id: NotSet,
+        status_id: Set(role.status_id),
+        sort: Set(role.sort),
+        role_name: Set(role.role_name),
+        remark: Set(role.remark.unwrap_or_default()),
+        ..Default::default()
+    };
+
+    let result = SysRole::insert(sys_role).exec(conn).await;
+    match result {
+        Ok(_u) => BaseResponse::<String>::ok_result(res),
+        Err(err) => BaseResponse::<String>::err_result_msg(res, err.to_string()),
+    }
+}
+
+// 删除角色信息
+#[handler]
+pub async fn role_delete(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    let item = req.parse_json::<RoleDeleteReq>().await.unwrap();
+    log::info!("role_delete params: {:?}", &item);
+
+    let state = depot.obtain::<AppState>().unwrap();
+    let conn = &state.conn;
+
+    let ids = item.ids.clone();
+
+    if SysUserRole::find()
+        .filter(sys_user_role::Column::RoleId.is_in(ids))
+        .count(conn)
+        .await
+        .unwrap_or_default()
+        > 0
+    {
+        return BaseResponse::<String>::err_result_msg(
+            res,
+            "角色已被使用,不能直接删除!".to_string(),
+        );
+    }
+
+    let result = SysRole::delete_many()
+        .filter(sys_role::Column::Id.is_in(item.ids.clone()))
+        .exec(conn)
+        .await;
+    match result {
+        Ok(_u) => BaseResponse::<String>::ok_result(res),
+        Err(err) => BaseResponse::<String>::err_result_msg(res, err.to_string()),
+    }
+}
+
+// 更新角色信息
+#[handler]
+pub async fn role_update(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    let role = req.parse_json::<RoleUpdateReq>().await.unwrap();
+    log::info!("role_update params: {:?}", &role);
+
+    let state = depot.obtain::<AppState>().unwrap();
+    let conn = &state.conn;
+
+    if SysRole::find_by_id(role.id.clone())
+        .one(conn)
+        .await
+        .unwrap_or_default()
+        .is_none()
+    {
+        return BaseResponse::<String>::err_result_msg(res, "角色不存在,不能更新!".to_string());
+    }
+    let sys_role = sys_role::ActiveModel {
+        id: Set(role.id),
+        status_id: Set(role.status_id),
+        sort: Set(role.sort),
+        role_name: Set(role.role_name),
+        remark: Set(role.remark.unwrap_or_default()),
+        ..Default::default()
+    };
+
+    let result = SysRole::update(sys_role).exec(conn).await;
+    match result {
+        Ok(_u) => BaseResponse::<String>::ok_result(res),
+        Err(err) => BaseResponse::<String>::err_result_msg(res, err.to_string()),
+    }
+}
+
 // 查询角色列表
 #[handler]
 pub async fn role_list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
@@ -47,90 +140,6 @@ pub async fn role_list(req: &mut Request, depot: &mut Depot, res: &mut Response)
     }
 
     BaseResponse::<Vec<RoleListData>>::ok_result_page(res, list_data, total)
-}
-
-// 添加角色信息
-#[handler]
-pub async fn role_save(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    let role = req.parse_json::<RoleSaveReq>().await.unwrap();
-    log::info!("role_save params: {:?}", &role);
-
-    let state = depot.obtain::<AppState>().unwrap();
-    let conn = &state.conn;
-
-    let sys_role = sys_role::ActiveModel {
-        id: NotSet,
-        status_id: Set(role.status_id),
-        sort: Set(role.sort),
-        role_name: Set(role.role_name),
-        remark: Set(role.remark.unwrap_or_default()),
-        ..Default::default()
-    };
-
-    SysRole::insert(sys_role).exec(conn).await.unwrap();
-    BaseResponse::<String>::ok_result(res)
-}
-
-// 更新角色信息
-#[handler]
-pub async fn role_update(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    let role = req.parse_json::<RoleUpdateReq>().await.unwrap();
-    log::info!("role_update params: {:?}", &role);
-
-    let state = depot.obtain::<AppState>().unwrap();
-    let conn = &state.conn;
-
-    if SysRole::find_by_id(role.id.clone())
-        .one(conn)
-        .await
-        .unwrap_or_default()
-        .is_none()
-    {
-        return BaseResponse::<String>::err_result_msg(res, "角色不存在,不能更新!".to_string());
-    }
-    let sys_role = sys_role::ActiveModel {
-        id: Set(role.id),
-        status_id: Set(role.status_id),
-        sort: Set(role.sort),
-        role_name: Set(role.role_name),
-        remark: Set(role.remark.unwrap_or_default()),
-        ..Default::default()
-    };
-
-    SysRole::update(sys_role).exec(conn).await.unwrap();
-    BaseResponse::<String>::ok_result(res)
-}
-
-// 删除角色信息
-#[handler]
-pub async fn role_delete(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    let item = req.parse_json::<RoleDeleteReq>().await.unwrap();
-    log::info!("role_delete params: {:?}", &item);
-
-    let state = depot.obtain::<AppState>().unwrap();
-    let conn = &state.conn;
-
-    let ids = item.ids.clone();
-
-    if SysUserRole::find()
-        .filter(sys_user_role::Column::RoleId.is_in(ids))
-        .count(conn)
-        .await
-        .unwrap_or_default()
-        > 0
-    {
-        return BaseResponse::<String>::err_result_msg(
-            res,
-            "角色已被使用,不能直接删除!".to_string(),
-        );
-    }
-
-    SysRole::delete_many()
-        .filter(sys_role::Column::Id.is_in(item.ids.clone()))
-        .exec(conn)
-        .await
-        .unwrap();
-    BaseResponse::<String>::ok_result(res)
 }
 
 // 查询角色关联的菜单
@@ -207,9 +216,11 @@ pub async fn update_role_menu(req: &mut Request, depot: &mut Depot, res: &mut Re
             ..Default::default()
         })
     }
-    SysRoleMenu::insert_many(menu_role)
+    let result = SysRoleMenu::insert_many(menu_role)
         .exec(conn)
-        .await
-        .unwrap();
-    BaseResponse::<String>::ok_result(res)
+        .await;
+    match result {
+        Ok(_u) => BaseResponse::<String>::ok_result(res),
+        Err(err) => BaseResponse::<String>::err_result_msg(res, err.to_string()),
+    }
 }
