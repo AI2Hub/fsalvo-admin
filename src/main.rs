@@ -39,11 +39,12 @@ async fn main() {
     info!("{:?}", state.conn);
 
     let acceptor = TcpListener::new("0.0.0.0:8100").bind().await;
-    Server::new(acceptor).serve(route()).await;
+    Server::new(acceptor).serve(route(state)).await;
 }
 
-fn route() -> Router {
+fn route(state: AppState) -> Router {
     Router::new()
+        .hoop(affix_state::inject(state))
         .path("/api")
         .get(hello)
         .push(Router::new().path("login").post(login))
