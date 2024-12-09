@@ -6,11 +6,6 @@
 
 sea-orm-cli generate entity -o src/model --with-serde both
 
-# todo
-
-接下来用flutter做个一面试题APP, [salvo-admin](https://github.com/feihua/salvo-admin)
-提供接口, [salvo-admin-ui](https://github.com/feihua/salvo-admin-ui) 提供控制台管理
-
 # 前端项目
 
 ```

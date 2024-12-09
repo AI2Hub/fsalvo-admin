@@ -3,11 +3,10 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::{ColumnTrait, EntityTrait, NotSet, PaginatorTrait, QueryFilter, QueryTrait};
 
 use crate::common::result::BaseResponse;
-use crate::model::prelude::{SysMenu, SysRole, SysRoleMenu, SysUserRole};
-use crate::model::{sys_role, sys_role_menu, sys_user_role};
+use crate::model::system::prelude::{SysMenu, SysRole, SysRoleMenu, SysUserRole};
 use crate::vo::system::role_vo::*;
 use crate::AppState;
-
+use crate::model::system::{sys_role, sys_role_menu, sys_user_role};
 
 // 添加角色信息
 #[handler]
