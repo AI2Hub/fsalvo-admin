@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 
 use crate::common::result::BaseResponse;
-use crate::common::result_page::ResponsePage;
 use crate::model::menu::{StringColumn, SysMenu};
 use crate::model::role::SysRole;
 use crate::model::user::{SysUser, SysUserAdd, SysUserUpdate};
@@ -367,7 +366,7 @@ pub async fn user_list(req: &mut Request, res: &mut Response) {
                     })
                 }
             }
-            ResponsePage::<Vec<UserListData>>::ok_result_page(res, list_data, 10)
+            BaseResponse::<Vec<UserListData>>::ok_result_page(res, list_data, 10)
         }
         Err(err) => {
             error!("err:{}", err.to_string());

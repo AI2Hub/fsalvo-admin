@@ -5,7 +5,6 @@ use salvo::prelude::*;
 use salvo::{Request, Response};
 
 use crate::common::result::BaseResponse;
-use crate::common::result_page::ResponsePage;
 use crate::model::menu::SysMenu;
 use crate::model::role::{SysRole, SysRoleAdd, SysRoleUpdate};
 use crate::model::role_menu::SysRoleMenuAdd;
@@ -156,7 +155,7 @@ pub async fn query_role_list(req: &mut Request, res: &mut Response) {
                 }
             }
 
-            ResponsePage::<Vec<RoleListData>>::ok_result_page(res, list, 10)
+            BaseResponse::<Vec<RoleListData>>::ok_result_page(res, list, 10)
         }
         Err(err) => {
             error!("err:{}", err.to_string());

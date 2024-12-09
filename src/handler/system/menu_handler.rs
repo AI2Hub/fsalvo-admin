@@ -1,5 +1,4 @@
 use crate::common::result::BaseResponse;
-use crate::common::result_page::ResponsePage;
 use crate::model::menu::{SysMenu, SysMenuAdd, SysMenuUpdate};
 use crate::schema::sys_menu::dsl::sys_menu;
 use crate::schema::sys_menu::{id, parent_id, sort, status_id};
@@ -49,11 +48,11 @@ pub async fn menu_list(req: &mut Request, res: &mut Response) {
                 }
             }
 
-            ResponsePage::<Vec<MenuListData>>::ok_result(res, menu_list_data)
+            BaseResponse::<Vec<MenuListData>>::ok_result_page(res, menu_list_data, 0)
         }
         Err(err) => {
             error!("{}", err.to_string());
-            ResponsePage::<String>::err_result_page(res, err.to_string())
+            BaseResponse::<String>::err_result_page(res, err.to_string())
         }
     }
 }
