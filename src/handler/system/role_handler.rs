@@ -3,7 +3,6 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::{ColumnTrait, EntityTrait, NotSet, PaginatorTrait, QueryFilter, QueryTrait};
 
 use crate::common::result::BaseResponse;
-use crate::common::result_page::ResponsePage;
 use crate::model::prelude::{SysMenu, SysRole, SysRoleMenu, SysUserRole};
 use crate::model::{sys_role, sys_role_menu, sys_user_role};
 use crate::vo::system::role_vo::*;
@@ -47,7 +46,7 @@ pub async fn role_list(req: &mut Request, depot: &mut Depot, res: &mut Response)
         })
     }
 
-    ResponsePage::<Vec<RoleListData>>::ok_result_page(res, list_data, total)
+    BaseResponse::<Vec<RoleListData>>::ok_result_page(res, list_data, total)
 }
 
 // 添加角色信息

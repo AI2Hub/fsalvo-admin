@@ -5,6 +5,18 @@ use std::fmt::Debug;
 
 // 统一返回vo
 #[derive(Serialize, Debug, Clone)]
+pub struct ResponsePage<T>
+where
+    T: Serialize + Debug,
+{
+    pub code: i32,
+    pub msg: String,
+    pub total: u64,
+    pub success: bool,
+    pub data: Option<T>,
+}
+
+#[derive(Serialize, Debug, Clone)]
 pub struct BaseResponse<T>
 where
     T: Serialize + Debug,
@@ -47,6 +59,16 @@ where
             msg: msg.to_string(),
             code: 1,
             data: Some("None".to_string()),
+        }))
+    }
+
+    pub fn ok_result_page(res: &mut Response, data: T, total: u64) {
+        res.render(Json(ResponsePage {
+            msg: "操作成功".to_string(),
+            code: 0,
+            success: true,
+            data: Some(data),
+            total,
         }))
     }
 
