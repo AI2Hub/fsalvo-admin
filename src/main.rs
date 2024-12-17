@@ -4,8 +4,8 @@ use log::info;
 use salvo::prelude::*;
 use sea_orm::{Database, DatabaseConnection};
 
+use crate::handler::system::sys_user_handler::login;
 use crate::routes::{build_other_route, build_system_route};
-use handler::system::user_handler::*;
 use middleware::auth::auth_token;
 
 mod common;
