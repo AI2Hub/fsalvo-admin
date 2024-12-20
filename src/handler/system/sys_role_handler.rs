@@ -1,38 +1,49 @@
+// author：刘飞华
+// createTime：2024/12/20 14:19:08
+
 use diesel::associations::HasTable;
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
+use diesel::sql_types::*;
+use diesel::{sql_query, ExpressionMethods, QueryDsl, RunQueryDsl};
 use log::{debug, error};
 use salvo::prelude::*;
 use salvo::{Request, Response};
 
 use crate::common::result::BaseResponse;
-use crate::model::system::menu::SysMenu;
-use crate::model::system::role::{SysRole, SysRoleAdd, SysRoleUpdate};
-use crate::model::system::role_menu::SysRoleMenuAdd;
+use crate::model::system::sys_menu_model::SysMenu;
+use crate::model::system::sys_role_menu_model::AddSysRoleMenu;
+use crate::model::system::sys_role_model::*;
 use crate::schema::sys_menu::dsl::sys_menu;
 use crate::schema::sys_role::dsl::sys_role;
-use crate::schema::sys_role::{id, role_name, status_id};
+use crate::schema::sys_role::*;
 use crate::schema::sys_role_menu::dsl::sys_role_menu;
 use crate::schema::sys_role_menu::{menu_id, role_id};
 use crate::schema::sys_user_role::dsl::sys_user_role;
-use crate::vo::system::role_vo::*;
+use crate::vo::system::sys_role_vo::*;
 use crate::{schema, RB};
 
-// 添加角色信息
+/*
+ *添加角色信息
+ *author：刘飞华
+ *date：2024/12/20 14:19:08
+ */
 #[handler]
-pub async fn add_role(req: &mut Request, res: &mut Response) {
-    let role = req.parse_json::<RoleSaveReq>().await.unwrap();
-    log::info!("add_role params: {:?}", &role);
-    let role_add = SysRoleAdd {
-        status_id: role.status_id,
-        sort: role.sort,
-        role_name: role.role_name,
-        remark: role.remark.unwrap(),
+pub async fn add_sys_role(req: &mut Request, res: &mut Response) {
+    let item = req.parse_json::<AddRoleReq>().await.unwrap();
+    log::info!("add sys_role params: {:?}", &item);
+
+    let add_sys_role_param = AddSysRole {
+        role_name: item.role_name,               //名称
+        status_id: item.status_id,               //状态(1:正常，0:禁用)
+        sort: item.sort,                         //排序
+        remark: item.remark.unwrap_or_default(), //备注, //创建时间
+        create_time: Default::default(),         //修改时间
+        update_time: Default::default(),
     };
 
     match &mut RB.clone().get() {
         Ok(conn) => {
             let result = diesel::insert_into(sys_role::table())
-                .values(role_add)
+                .values(add_sys_role_param)
                 .execute(conn);
             match result {
                 Ok(_u) => BaseResponse::<String>::ok_result(res),
@@ -46,11 +57,15 @@ pub async fn add_role(req: &mut Request, res: &mut Response) {
     }
 }
 
-// 删除角色信息
+/*
+ *删除角色信息
+ *author：刘飞华
+ *date：2024/12/20 14:19:08
+ */
 #[handler]
-pub async fn delete_role(req: &mut Request, res: &mut Response) {
-    let item = req.parse_json::<RoleDeleteReq>().await.unwrap();
-    log::info!("delete_role params: {:?}", &item);
+pub async fn delete_sys_role(req: &mut Request, res: &mut Response) {
+    let item = req.parse_json::<DeleteRoleReq>().await.unwrap();
+    log::info!("delete sys_role params: {:?}", &item);
     match &mut RB.clone().get() {
         Ok(conn) => {
             let ids = item.ids.clone();
@@ -88,24 +103,31 @@ pub async fn delete_role(req: &mut Request, res: &mut Response) {
     }
 }
 
-// 更新角色信息
+/*
+ *更新角色信息
+ *author：刘飞华
+ *date：2024/12/20 14:19:08
+ */
 #[handler]
-pub async fn update_role(req: &mut Request, res: &mut Response) {
-    let role = req.parse_json::<RoleUpdateReq>().await.unwrap();
-    log::info!("update_role params: {:?}", &role);
-    let s_role = SysRoleUpdate {
-        id: role.id,
-        status_id: role.status_id,
-        sort: role.sort,
-        role_name: role.role_name,
-        remark: role.remark.unwrap_or_default(),
+pub async fn update_sys_role(req: &mut Request, res: &mut Response) {
+    let item = req.parse_json::<UpdateRoleReq>().await.unwrap();
+    log::info!("update sys_role params: {:?}", &item);
+
+    let update_sys_role_param = UpdateSysRole {
+        id: item.id,                             //主键
+        role_name: item.role_name,               //名称
+        status_id: item.status_id,               //状态(1:正常，0:禁用)
+        sort: item.sort,                         //排序
+        remark: item.remark.unwrap_or_default(), //备注, //创建时间
+        create_time: Default::default(),         //修改时间
+        update_time: Default::default(),
     };
 
     match &mut RB.clone().get() {
         Ok(conn) => {
             let result = diesel::update(sys_role)
-                .filter(id.eq(&role.id))
-                .set(s_role)
+                .filter(id.eq(&item.id))
+                .set(update_sys_role_param)
                 .execute(conn);
             match result {
                 Ok(_u) => BaseResponse::<String>::ok_result(res),
@@ -119,12 +141,88 @@ pub async fn update_role(req: &mut Request, res: &mut Response) {
     }
 }
 
-// 查询角色列表
+/*
+ *更新角色信息状态
+ *author：刘飞华
+ *date：2024/12/20 14:19:08
+ */
 #[handler]
-pub async fn query_role_list(req: &mut Request, res: &mut Response) {
-    let item = req.parse_json::<RoleListReq>().await.unwrap();
-    log::info!("query_role_list params: {:?}", &item);
+pub async fn update_sys_role_status(req: &mut Request, res: &mut Response) {
+    let item = req.parse_json::<UpdateRoleStatusReq>().await.unwrap();
+    log::info!("update sys_role_status params: {:?}", &item);
+
+    match &mut RB.clone().get() {
+        Ok(conn) => {
+            let result = diesel::update(sys_role)
+                .filter(id.eq_any(&item.ids))
+                .set(status_id.eq(item.status))
+                .execute(conn);
+            match result {
+                Ok(_u) => BaseResponse::<String>::ok_result(res),
+                Err(err) => BaseResponse::<String>::err_result_msg(res, err.to_string()),
+            };
+        }
+        Err(err) => {
+            error!("err:{}", err.to_string());
+            BaseResponse::<String>::err_result_msg(res, err.to_string())
+        }
+    }
+}
+
+/*
+ *查询角色信息详情
+ *author：刘飞华
+ *date：2024/12/20 14:19:08
+ */
+#[handler]
+pub async fn query_sys_role_detail(req: &mut Request, res: &mut Response) {
+    let item = req.parse_json::<QueryRoleDetailReq>().await.unwrap();
+
+    log::info!("query sys_role_detail params: {:?}", &item);
+
+    match &mut RB.clone().get() {
+        Ok(conn) => {
+            let sys_role_sql = sql_query("SELECT * FROM sys_role WHERE id = ?");
+            let result = sys_role_sql
+                .bind::<Bigint, _>(&item.id)
+                .get_result::<SysRole>(conn);
+            if let Ok(x) = result {
+                let data = QueryRoleDetailResp {
+                    id: x.id,                               //主键
+                    role_name: x.role_name,                 //名称
+                    status_id: x.status_id,                 //状态(1:正常，0:禁用)
+                    sort: x.sort,                           //排序
+                    remark: x.remark,                       //备注
+                    create_time: x.create_time.to_string(), //创建时间
+                    update_time: x.update_time.to_string(), //修改时间
+                };
+
+                BaseResponse::<QueryRoleDetailResp>::ok_result_data(res, data)
+            }
+        }
+        Err(err) => {
+            error!("err:{}", err.to_string());
+            BaseResponse::<QueryRoleDetailResp>::err_result_data(
+                res,
+                QueryRoleDetailResp::new(),
+                err.to_string(),
+            )
+        }
+    }
+}
+
+/*
+ *查询角色信息列表
+ *author：刘飞华
+ *date：2024/12/20 14:19:08
+ */
+#[handler]
+pub async fn query_sys_role_list(req: &mut Request, res: &mut Response) {
+    let item = req.parse_json::<QueryRoleListReq>().await.unwrap();
+    log::info!("query sys_role_list params: {:?}", &item);
+
     let mut query = sys_role::table().into_boxed();
+
     if let Some(i) = &item.role_name {
         query = query.filter(role_name.eq(i));
     }
@@ -139,45 +237,51 @@ pub async fn query_role_list(req: &mut Request, res: &mut Response) {
 
     match &mut RB.clone().get() {
         Ok(conn) => {
-            let result = query.load::<SysRole>(conn);
-            let mut list: Vec<RoleListData> = Vec::new();
-            if let Ok(role_list_data) = result {
-                for role in role_list_data {
-                    list.push(RoleListData {
-                        id: role.id,
-                        sort: role.sort,
-                        status_id: role.status_id,
-                        role_name: role.role_name,
-                        remark: role.remark,
-                        create_time: role.create_time.to_string(),
-                        update_time: role.update_time.to_string(),
+            let mut sys_role_list_data: Vec<RoleListDataResp> = Vec::new();
+            if let Ok(list) = query.load::<SysRole>(conn) {
+                for x in list {
+                    sys_role_list_data.push(RoleListDataResp {
+                        id: x.id,                               //主键
+                        role_name: x.role_name,                 //名称
+                        status_id: x.status_id,                 //状态(1:正常，0:禁用)
+                        sort: x.sort,                           //排序
+                        remark: x.remark,                       //备注
+                        create_time: x.create_time.to_string(), //创建时间
+                        update_time: x.update_time.to_string(), //修改时间
                     })
                 }
+                BaseResponse::<Vec<RoleListDataResp>>::ok_result_page(res, sys_role_list_data, 10)
             }
-
-            BaseResponse::<Vec<RoleListData>>::ok_result_page(res, list, 10)
         }
         Err(err) => {
             error!("err:{}", err.to_string());
-            BaseResponse::<String>::err_result_msg(res, err.to_string())
+            BaseResponse::<Vec<RoleListDataResp>>::err_result_page(
+                res,
+                RoleListDataResp::new(),
+                err.to_string(),
+            )
         }
     }
 }
 
-// 查询角色关联的菜单
+/*
+ *查询角色关联的菜单
+ *author：刘飞华
+ *date：2024/12/20 14:19:08
+ */
 #[handler]
 pub async fn query_role_menu(req: &mut Request, res: &mut Response) {
     let item = req.parse_json::<QueryRoleMenuReq>().await.unwrap();
     log::info!("query_role_menu params: {:?}", &item);
     match &mut RB.clone().get() {
         Ok(conn) => {
-            let mut menu_data_list: Vec<MenuDataList> = Vec::new();
+            let mut menu_data_list: Vec<MenuList> = Vec::new();
             let mut role_menu_ids: Vec<i64> = Vec::new();
             // 查询所有菜单
             match sys_menu.load::<SysMenu>(conn) {
                 Ok(menu_list) => {
                     for menu in menu_list {
-                        menu_data_list.push(MenuDataList {
+                        menu_data_list.push(MenuList {
                             id: menu.id.clone(),
                             parent_id: menu.parent_id,
                             title: menu.menu_name.clone(),
@@ -211,10 +315,10 @@ pub async fn query_role_menu(req: &mut Request, res: &mut Response) {
                 }
             }
 
-            BaseResponse::<QueryRoleMenuData>::ok_result_data(
+            BaseResponse::<QueryRoleMenuResp>::ok_result_data(
                 res,
-                QueryRoleMenuData {
-                    role_menus: role_menu_ids,
+                QueryRoleMenuResp {
+                    menu_ids: role_menu_ids,
                     menu_list: menu_data_list,
                 },
             )
@@ -226,7 +330,11 @@ pub async fn query_role_menu(req: &mut Request, res: &mut Response) {
     }
 }
 
-// 更新角色关联的菜单
+/*
+ *更新角色关联的菜单
+ *author：刘飞华
+ *date：2024/12/20 14:19:08
+ */
 #[handler]
 pub async fn update_role_menu(req: &mut Request, res: &mut Response) {
     let item = req.parse_json::<UpdateRoleMenuReq>().await.unwrap();
@@ -237,14 +345,13 @@ pub async fn update_role_menu(req: &mut Request, res: &mut Response) {
     match &mut RB.clone().get() {
         Ok(conn) => match diesel::delete(sys_role_menu.filter(role_id.eq(r_id))).execute(conn) {
             Ok(_) => {
-                let mut role_menu: Vec<SysRoleMenuAdd> = Vec::new();
+                let mut role_menu: Vec<AddSysRoleMenu> = Vec::new();
 
                 for m_id in menu_ids {
-                    role_menu.push(SysRoleMenuAdd {
-                        status_id: 1,
-                        sort: 1,
+                    role_menu.push(AddSysRoleMenu {
                         menu_id: m_id.clone(),
                         role_id: r_id.clone(),
+                        create_time: Default::default(),
                     })
                 }
 

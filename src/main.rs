@@ -8,7 +8,7 @@ use salvo::prelude::*;
 
 use crate::middleware::auth::auth_token;
 use crate::routes::{build_other_route, build_system_route};
-use handler::system::user_handler::*;
+use handler::system::sys_user_handler::*;
 
 pub mod common;
 pub mod handler;
