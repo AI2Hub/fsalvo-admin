@@ -47,7 +47,7 @@ fn route(state: AppState) -> Router {
         .hoop(affix_state::inject(state))
         .path("/api")
         .get(hello)
-        .push(Router::new().path("login").post(login))
+        .push(Router::new().path("/system/user/login").post(login))
         .push(
             Router::new()
                 .hoop(auth_token)

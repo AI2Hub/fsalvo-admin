@@ -524,7 +524,7 @@ pub async fn query_user_menu(depot: &mut Depot, res: &mut Response) {
     let mut sys_menu: HashSet<MenuList> = HashSet::new();
     for y in SysMenu::find()
         .filter(sys_menu::Column::Id.is_in(menu_ids))
-        .filter(sys_menu::Column::StatusId.eq(1))
+        .filter(sys_menu::Column::Status.eq(1))
         .order_by_asc(sys_menu::Column::Sort)
         .all(conn)
         .await
