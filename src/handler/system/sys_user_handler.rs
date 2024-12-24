@@ -619,7 +619,7 @@ pub async fn query_user_menu(depot: &mut Depot, res: &mut Response) {
                     }
                     match sys_menu
                         .filter(schema::sys_menu::id.eq_any(menu_ids))
-                        .filter(schema::sys_menu::status_id.eq(1))
+                        .filter(schema::sys_menu::status.eq(1))
                         .order(crate::schema::sys_menu::sort.asc())
                         .distinct()
                         .load::<SysMenu>(conn)

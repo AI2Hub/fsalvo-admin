@@ -48,7 +48,7 @@ fn route() -> Router {
     Router::new()
         .path("/api")
         .get(hello)
-        .push(Router::new().path("login").post(login))
+        .push(Router::new().path("/system/user/login").post(login))
         .push(
             Router::new()
                 .hoop(auth_token)
